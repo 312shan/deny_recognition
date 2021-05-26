@@ -1,0 +1,4 @@
+/best_model.weights
+.idea/
+cys_valid_result.txt
+data/*.tsv
