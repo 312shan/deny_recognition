@@ -95,16 +95,17 @@ class data_generator:
             )
             for i in idxs:
                 d = self.data.iloc[i, :]
-                question = d['Question'].lower()
+                question = d['Question'].lower() + '[SEP]' + d["Description"].lower()
                 answer = d['Answer'].lower()
                 lb = int(d["Label"])
+
                 question_words = tokenize(question)
                 question = ''.join(question_words)
                 x1 = [char2id.get(c, 1) for c in question]  # query.char_ids
 
                 answer_words = tokenize(answer)
-                question = ''.join(answer_words)
-                x2 = [char2id.get(c, 1) for c in question]  # query.char_ids
+                answer = ''.join(answer_words)
+                x2 = [char2id.get(c, 1) for c in answer]  # query.char_ids
 
                 X1.append(x1)  # query.char_ids
                 X2.append(x2)  # document.char_ids
@@ -141,16 +142,17 @@ class dev_data_generator:
         )
         for i in idxs:
             d = self.data.iloc[i, :]
-            question = d['Question'].lower()
+            question = d['Question'].lower() + '[SEP]' + d["Description"].lower()
             answer = d['Answer'].lower()
             lb = int(d["Label"])
+
             question_words = tokenize(question)
             question = ''.join(question_words)
             x1 = [char2id.get(c, 1) for c in question]  # query.char_ids
 
             answer_words = tokenize(answer)
-            question = ''.join(answer_words)
-            x2 = [char2id.get(c, 1) for c in question]  # query.char_ids
+            answer = ''.join(answer_words)
+            x2 = [char2id.get(c, 1) for c in answer]  # query.char_ids
 
             X1.append(x1)  # query.char_ids
             X2.append(x2)  # document.char_ids
@@ -187,16 +189,17 @@ class test_data_generator:
         )
         for i in idxs:
             d = self.data.iloc[i, :]
-            question = d['Question'].lower()
+            question = d['Question'].lower() + '[SEP]' + d["Description"].lower()
             answer = d['Answer'].lower()
             doc_id = int(d["Docid"])
+
             question_words = tokenize(question)
             question = ''.join(question_words)
             x1 = [char2id.get(c, 1) for c in question]  # query.char_ids
 
             answer_words = tokenize(answer)
-            question = ''.join(answer_words)
-            x2 = [char2id.get(c, 1) for c in question]  # query.char_ids
+            answer = ''.join(answer_words)
+            x2 = [char2id.get(c, 1) for c in answer]  # query.char_ids
 
             X1.append(x1)  # query.char_ids
             X2.append(x2)  # document.char_ids
@@ -235,6 +238,16 @@ from keras.callbacks import Callback
 from keras.optimizers import Adam
 
 K.clear_session()
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import tensorflow as tf
+import keras.backend.tensorflow_backend as KTF
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.Session(config=config)
+KTF.set_session(session)
 
 
 # https://kexue.fm/archives/4765
@@ -402,7 +415,7 @@ train_model = Model(
 bce_loss = K.mean(K.binary_crossentropy(t, pt))
 
 train_model.add_loss(bce_loss)
-train_model.compile(optimizer=Adam(1e-3))
+train_model.compile(optimizer=Adam(3e-3))
 train_model.summary()
 
 
@@ -487,8 +500,11 @@ class Evaluate(Callback):
 
 
 evaluator = Evaluate()
-
+md_path = 'best_model.weights'
 if __name__ == '__main__':
+
+    if os.path.exists(md_path):
+        train_model.load_weights(md_path)
     train_model.fit_generator(
         train_D.__iter__(),
         steps_per_epoch=len(train_D),
@@ -496,8 +512,8 @@ if __name__ == '__main__':
         callbacks=[evaluator]
     )
 else:
-    train_model.load_weights('best_model.weights')
-    test_df = pd.read_csv("data/train.tsv", sep="\t")
+    train_model.load_weights(md_path)
+    test_df = pd.read_csv("data/test.tsv", sep="\t")
     test_D = test_data_generator(test_df)
     doc_ids = []
     labels = []
@@ -507,9 +523,8 @@ else:
         y_pred = y_pred.flatten()
         labels.extend(y_pred)
         doc_ids.extend(d[0][-1])
+    lb_df = pd.DataFrame({"Docid": doc_ids, "Label": labels})
 
-    submit_df = pd.DataFrame(
-        {"Label": labels, "Docid": doc_ids, "Question": test_df.Question,
-         "Description": test_df.Description, "Answer": test_df.Answer})
-
-    submit_df.to_csv("cys_valid_result.txt", encoding="utf-8", index=False, sep="\t")
+    test_final = pd.merge(test_df, lb_df, on='Docid')
+    cols = ['Label', 'Docid', 'Question', 'Description', 'Answer']
+    test_final[cols].to_csv('cys_valid_result.txt', encoding="utf-8", sep='\t', index=False)
